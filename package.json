@@ -1,0 +1,16 @@
+{
+  "name": "fortnite-trainer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3D web-based Third-Person Shooter and tactical building prototype inspired by Fortnite",
+  "scripts": {
+    "dev": "concurrently -n CLIENT,SERVER -c cyan,magenta \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "build": "npm --prefix server run build && npm --prefix client run build",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
