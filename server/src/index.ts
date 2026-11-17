@@ -278,6 +278,14 @@ wss.on('connection', (ws) => {
         case 'build':
           handleBuild(player, msg.pieceType, msg.material, msg.gx, msg.gy, msg.gz, msg.rotY);
           break;
+        case 'edit_structure': {
+          const piece = structures.get(msg.id);
+          if (piece) {
+            piece.editVariant = msg.editVariant;
+            broadcast({ type: 'structure_edited', id: msg.id, editVariant: msg.editVariant });
+          }
+          break;
+        }
         case 'damage_structure':
           handleDamageStructure(msg.id, msg.damage);
           break;

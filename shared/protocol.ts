@@ -39,6 +39,7 @@ export interface StructurePiece {
   hp: number;
   maxHp: number;
   ownerId: string;
+  editVariant?: number;
 }
 
 export interface StormState {
@@ -64,6 +65,7 @@ export type ClientMessage =
   | { type: 'state'; pos: Vec3; yaw: number; pitch: number; weapon: WeaponType; crouching: boolean }
   | { type: 'fire'; origin: Vec3; dir: Vec3; weapon: WeaponType }
   | { type: 'build'; pieceType: StructureType; material: ResourceType; gx: number; gy: number; gz: number; rotY: number }
+  | { type: 'edit_structure'; id: string; editVariant: number }
   | { type: 'damage_structure'; id: string; damage: number }
   | { type: 'respawn' };
 
@@ -87,6 +89,7 @@ export type ServerMessage =
   | { type: 'fire_fx'; shooterId: string; origin: Vec3; hitPoint: Vec3; weapon: WeaponType }
   | { type: 'hit_confirm'; targetType: 'player' | 'structure'; damage: number; eliminated?: boolean }
   | { type: 'structure_placed'; piece: StructurePiece }
+  | { type: 'structure_edited'; id: string; editVariant: number }
   | { type: 'structure_updated'; id: string; hp: number }
   | { type: 'structure_destroyed'; id: string }
   | { type: 'kill_feed'; entry: KillFeedEntry }

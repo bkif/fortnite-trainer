@@ -136,9 +136,35 @@ input.onKeyPress((code) => {
   else if (code === 'KeyX' || code === 'F2') building.setBlueprint('floor');
   else if (code === 'KeyC' || code === 'F3') building.setBlueprint('ramp');
   else if (code === 'KeyV' || code === 'F4') building.setBlueprint('pyramid');
-  else if (code === 'KeyG' || code === 'KeyB') building.buildMode = !building.buildMode;
-  else if (code === 'KeyR') {
-    if (building.buildMode) {
+  else if (code === 'KeyG' || code === 'KeyB') {
+    if (building.editMode) {
+      const res = building.confirmEdit();
+      if (res) network.send({ type: 'edit_structure', id: res.id, editVariant: res.editVariant });
+    }
+    building.buildMode = !building.buildMode;
+  } else if (code === 'KeyE') {
+    if (building.editMode) {
+      const res = building.confirmEdit();
+      if (res) {
+        network.send({ type: 'edit_structure', id: res.id, editVariant: res.editVariant });
+        audio.playBuild();
+      }
+    } else {
+      raycaster.set(player.getMuzzleOrigin(), player.getCameraForward());
+      raycaster.far = 7.5;
+      const hits = raycaster.intersectObjects(building.structureMeshes, false);
+      if (hits.length > 0) {
+        const structId = hits[0].object.userData.structureId as string | undefined;
+        if (structId && building.startEdit(structId)) {
+          audio.playBuild();
+        }
+      }
+    }
+  } else if (code === 'KeyR') {
+    if (building.editMode) {
+      building.cycleEditVariant();
+      audio.playBuild();
+    } else if (building.buildMode) {
       building.rotateBlueprint();
     } else {
       player.startReload();
@@ -151,10 +177,21 @@ input.onKeyPress((code) => {
   }
 });
 
+input.onMouseClick((button) => {
+  if (!input.isLocked || !building.editMode) return;
+  if (button === 0) {
+    building.cycleEditVariant();
+    audio.playBuild();
+  } else if (button === 2) {
+    building.resetEdit();
+    audio.playBuild();
+  }
+});
+
 const raycaster = new THREE.Raycaster();
 
 function performFireOrBuild(): void {
-  if (!player.alive || !input.isLocked) return;
+  if (!player.alive || !input.isLocked || building.editMode) return;
 
   if (building.buildMode) {
     if (player.fireCooldown > 0) return;
