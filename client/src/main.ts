@@ -328,7 +328,15 @@ function animate(now: number): void {
   hud.setLocked(input.isLocked);
 
   if (input.mouseDown) {
-    performFireOrBuild();
+    if (building.editMode) {
+      raycaster.set(player.getMuzzleOrigin(), player.getCameraForward());
+      raycaster.far = 8.5;
+      if (building.selectEditTileAtRay(raycaster)) {
+        audio.playBuild();
+      }
+    } else {
+      performFireOrBuild();
+    }
   }
 
   player.update(dt);

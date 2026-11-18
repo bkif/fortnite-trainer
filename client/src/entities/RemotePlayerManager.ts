@@ -1,7 +1,9 @@
 import * as THREE from 'three';
-import type { PlayerState } from '../../../shared/protocol';
+import type { PlayerState, WeaponType } from '../../../shared/protocol';
+import { createCharacterRig, type CharacterRig } from './ProceduralAssets';
 
 interface RemoteEntity {
+  rig: CharacterRig;
   group: THREE.Group;
   targetPos: THREE.Vector3;
   targetYaw: number;
@@ -13,28 +15,6 @@ export class RemotePlayerManager {
 
   constructor(private scene: THREE.Scene) {}
 
-  private createPlayerMesh(): THREE.Group {
-    const group = new THREE.Group();
-
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6, flatShading: true });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xfca5a5, roughness: 0.5, flatShading: true });
-    const visorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.8 });
-
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.9, 4, 8), bodyMat);
-    body.position.y = 0.95;
-    body.castShadow = true;
-
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), headMat);
-    head.position.y = 1.85;
-    head.castShadow = true;
-
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.1), visorMat);
-    visor.position.set(0, 1.88, -0.22);
-
-    group.add(body, head, visor);
-    return group;
-  }
-
   public syncPlayers(players: PlayerState[], localId: string | null): void {
     const activeIds = new Set<string>();
 
@@ -44,10 +24,12 @@ export class RemotePlayerManager {
 
       let entity = this.entities.get(p.id);
       if (!entity) {
-        const group = this.createPlayerMesh();
+        const rig = createCharacterRig(0xef4444);
+        const group = rig.group;
         group.position.set(p.pos.x, p.pos.y, p.pos.z);
         this.scene.add(group);
         entity = {
+          rig,
           group,
           targetPos: new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z),
           targetYaw: p.yaw,
@@ -58,6 +40,10 @@ export class RemotePlayerManager {
         entity.targetPos.set(p.pos.x, p.pos.y, p.pos.z);
         entity.targetYaw = p.yaw;
         entity.state = p;
+      }
+
+      for (const key of Object.keys(entity.rig.weaponMeshes) as WeaponType[]) {
+        entity.rig.weaponMeshes[key].visible = key === p.weapon;
       }
 
       entity.group.visible = p.alive;
