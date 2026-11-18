@@ -3,6 +3,7 @@ import type { ResourceType, WeaponType } from '../../../shared/protocol';
 import type { InputManager } from '../engine/InputManager';
 import type { WorldMap } from '../engine/WorldMap';
 import type { BuildingSystem } from '../building/BuildingSystem';
+import { createCharacterRig, type CharacterRig } from './ProceduralAssets';
 
 export interface WeaponStats {
   name: string;
@@ -16,8 +17,10 @@ export interface WeaponStats {
 }
 
 export class PlayerController {
+  public rig: CharacterRig;
   public group: THREE.Group;
   public pos = new THREE.Vector3(0, 3, 0);
+  private walkAnimTime = 0;
   public vel = new THREE.Vector3();
   public yaw = 0;
   public pitch = -0.15;
@@ -57,29 +60,9 @@ export class PlayerController {
     private worldMap: WorldMap,
     private building: BuildingSystem
   ) {
-    this.group = this.createMesh();
+    this.rig = createCharacterRig(0x0284c7);
+    this.group = this.rig.group;
     scene.add(this.group);
-  }
-
-  private createMesh(): THREE.Group {
-    const g = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.55, flatShading: true });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.5, flatShading: true });
-    const visorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.85 });
-
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.9, 4, 8), bodyMat);
-    body.position.y = 0.95;
-    body.castShadow = true;
-
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), headMat);
-    head.position.y = 1.85;
-    head.castShadow = true;
-
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.1), visorMat);
-    visor.position.set(0, 1.88, -0.22);
-
-    g.add(body, head, visor);
-    return g;
   }
 
   public getCameraForward(): THREE.Vector3 {
@@ -178,24 +161,54 @@ export class PlayerController {
       this.onGround = false;
     }
 
-    // Update character mesh
+    // Update character mesh & animate legs
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.yaw;
     this.group.scale.y = this.crouching ? 0.72 : 1.0;
 
-    // Over-the-shoulder third-person camera
-    const shoulderOffset = new THREE.Vector3(0.85, this.crouching ? 1.45 : 1.85, 3.6);
-    shoulderOffset.applyEuler(new THREE.Euler(this.pitch * 0.65, this.yaw, 0, 'YXZ'));
-    const desiredCamPos = this.pos.clone().add(shoulderOffset);
+    const horizSpeed = Math.hypot(this.vel.x, this.vel.z);
+    if (!this.onGround) {
+      this.rig.leftLeg.rotation.x = 0.45;
+      this.rig.rightLeg.rotation.x = -0.35;
+    } else if (horizSpeed > 0.5) {
+      this.walkAnimTime += dt * horizSpeed * 1.4;
+      this.rig.leftLeg.rotation.x = Math.sin(this.walkAnimTime) * 0.55;
+      this.rig.rightLeg.rotation.x = -Math.sin(this.walkAnimTime) * 0.55;
+    } else {
+      this.rig.leftLeg.rotation.x = THREE.MathUtils.lerp(this.rig.leftLeg.rotation.x, 0, dt * 12);
+      this.rig.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rig.rightLeg.rotation.x, 0, dt * 12);
+    }
+
+    for (const key of Object.keys(this.rig.weaponMeshes) as WeaponType[]) {
+      this.rig.weaponMeshes[key].visible = key === this.activeWeapon;
+    }
+
+    // Over-the-shoulder third-person spring-arm camera
+    const pivot = this.pos.clone().add(new THREE.Vector3(0, this.crouching ? 1.35 : 1.75, 0));
+    const shoulderOffset = new THREE.Vector3(0.95, 0.25, 3.8);
+    shoulderOffset.applyEuler(new THREE.Euler(this.pitch * 0.7, this.yaw, 0, 'YXZ'));
+    const desiredCamPos = pivot.clone().add(shoulderOffset);
+
+    // Spring-arm collision check against terrain & structures
+    const camDir = desiredCamPos.clone().sub(pivot);
+    const camDist = camDir.length();
+    if (camDist > 0.01) {
+      this.raycaster.set(pivot, camDir.normalize());
+      this.raycaster.far = camDist;
+      const obstacles = [...this.worldMap.collidableMeshes, ...this.building.structureMeshes];
+      const camHits = this.raycaster.intersectObjects(obstacles, false);
+      if (camHits.length > 0) {
+        const safeDist = Math.max(0.85, camHits[0].distance - 0.3);
+        desiredCamPos.copy(pivot).addScaledVector(camDir, safeDist);
+      }
+    }
 
     const camMinY = this.worldMap.getTerrainHeight(desiredCamPos.x, desiredCamPos.z) + 0.5;
     if (desiredCamPos.y < camMinY) desiredCamPos.y = camMinY;
 
     this.camera.position.lerp(desiredCamPos, Math.min(1, dt * 22));
 
-    const lookTarget = this.pos.clone().add(new THREE.Vector3(0, this.crouching ? 1.25 : 1.65, 0));
-    const lookDir = this.getCameraForward();
-    lookTarget.addScaledVector(lookDir, 12);
+    const lookTarget = pivot.clone().addScaledVector(this.getCameraForward(), 14);
     this.camera.lookAt(lookTarget);
   }
 }

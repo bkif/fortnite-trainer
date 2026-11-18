@@ -28,9 +28,14 @@ export class BuildingSystem {
   public editMode = false;
   public editingId: string | null = null;
   public editVariant = 0;
+  public editOnRelease = true;
   public rotationStep = 0; // 0..3
   public currentGridPos = { gx: 0, gy: 0, gz: 0 };
   public isValidPlacement = false;
+
+  private editGridGroup = new THREE.Group();
+  private editTileMeshes: THREE.Mesh[] = [];
+  private selectedTiles = new Set<number>();
 
   private geometries: Record<StructureType, THREE.BufferGeometry>;
 
@@ -46,6 +51,7 @@ export class BuildingSystem {
     this.previewMesh = new THREE.Mesh(this.geometries.wall, this.blueprintMat);
     this.previewMesh.visible = false;
     this.scene.add(this.previewMesh);
+    this.scene.add(this.editGridGroup);
   }
 
   private createRampGeometry(): THREE.BufferGeometry {
@@ -184,9 +190,92 @@ export class BuildingSystem {
     this.editMode = true;
     this.editingId = id;
     this.editVariant = entry.piece.editVariant ?? 0;
+    this.selectedTiles.clear();
     const mat = entry.mesh.material as THREE.MeshStandardMaterial;
     mat.emissive.setHex(0x06b6d4);
-    mat.emissiveIntensity = 0.55;
+    mat.emissiveIntensity = 0.35;
+
+    this.buildEditGridOverlay(entry.piece);
+    return true;
+  }
+
+  private buildEditGridOverlay(piece: { type: StructureType; gx: number; gy: number; gz: number; rotY: number }): void {
+    this.clearEditGridOverlay();
+    const basePos = this.gridToWorld(piece.gx, piece.gy, piece.gz, piece.type, piece.rotY);
+    this.editGridGroup.position.copy(basePos);
+    this.editGridGroup.rotation.set(0, piece.rotY * (Math.PI / 2), 0);
+    this.editGridGroup.visible = true;
+
+    const cols = piece.type === 'wall' ? 3 : 2;
+    const rows = piece.type === 'wall' ? 3 : 2;
+    const tileW = (GRID_SIZE_X / cols) * 0.88;
+    const tileH = (piece.type === 'wall' ? GRID_SIZE_Y / rows : GRID_SIZE_Z / rows) * 0.88;
+    const tileGeo = new THREE.PlaneGeometry(tileW, tileH);
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c;
+        const tileMat = new THREE.MeshBasicMaterial({
+          color: 0x94a3b8,
+          transparent: true,
+          opacity: 0.55,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const tile = new THREE.Mesh(tileGeo, tileMat);
+        const x = (c - (cols - 1) / 2) * (GRID_SIZE_X / cols);
+        const yOrZ = (r - (rows - 1) / 2) * (piece.type === 'wall' ? GRID_SIZE_Y / rows : GRID_SIZE_Z / rows);
+
+        if (piece.type === 'wall') {
+          tile.position.set(x, -yOrZ, 0.16);
+        } else if (piece.type === 'ramp') {
+          const angle = Math.atan2(GRID_SIZE_Y, GRID_SIZE_Z);
+          tile.rotation.x = -Math.PI / 2 - angle;
+          tile.position.set(x, yOrZ * Math.sin(angle) + 0.15, yOrZ * Math.cos(angle));
+        } else {
+          tile.rotation.x = -Math.PI / 2;
+          tile.position.set(x, 0.18, yOrZ);
+        }
+
+        tile.userData.tileIndex = idx;
+        this.editGridGroup.add(tile);
+        this.editTileMeshes.push(tile);
+      }
+    }
+  }
+
+  private clearEditGridOverlay(): void {
+    for (const m of this.editTileMeshes) {
+      this.editGridGroup.remove(m);
+      (m.material as THREE.Material).dispose();
+    }
+    this.editTileMeshes = [];
+    this.editGridGroup.visible = false;
+  }
+
+  public selectEditTileAtRay(raycaster: THREE.Raycaster): boolean {
+    if (!this.editMode || !this.editingId) return false;
+    const hits = raycaster.intersectObjects(this.editTileMeshes, false);
+    if (hits.length === 0) return false;
+    const idx = hits[0].object.userData.tileIndex as number;
+    if (this.selectedTiles.has(idx)) return false;
+
+    this.selectedTiles.add(idx);
+    const mat = (hits[0].object as THREE.Mesh).material as THREE.MeshBasicMaterial;
+    mat.color.setHex(0x38bdf8);
+    mat.opacity = 0.85;
+
+    // Map tile selection count/position to edit variant
+    const entry = this.structures.get(this.editingId);
+    if (entry) {
+      if (entry.piece.type === 'wall') {
+        const count = this.selectedTiles.size;
+        this.editVariant = count >= 3 ? 1 : idx % 3 === 0 ? 2 : 3;
+      } else {
+        this.editVariant = this.selectedTiles.size >= 1 ? 1 : 0;
+      }
+      this.applyEdit(this.editingId, this.editVariant);
+    }
     return true;
   }
 
@@ -201,6 +290,12 @@ export class BuildingSystem {
 
   public resetEdit(): void {
     if (!this.editMode || !this.editingId) return;
+    this.selectedTiles.clear();
+    for (const m of this.editTileMeshes) {
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.color.setHex(0x94a3b8);
+      mat.opacity = 0.55;
+    }
     this.editVariant = 0;
     this.applyEdit(this.editingId, 0);
   }
@@ -213,9 +308,11 @@ export class BuildingSystem {
       mat.emissive.setHex(0x000000);
       mat.emissiveIntensity = 0;
     }
+    this.clearEditGridOverlay();
     const result = { id: this.editingId, editVariant: this.editVariant };
     this.editMode = false;
     this.editingId = null;
+    this.selectedTiles.clear();
     return result;
   }
 

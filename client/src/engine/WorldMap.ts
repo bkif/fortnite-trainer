@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { ResourceType } from '../../../shared/protocol';
 import { createSkyboxMaterial, createStormWallMaterial } from '../shaders/customShaders';
+import { createArenaGridTexture } from '../entities/ProceduralAssets';
 
 export interface HarvestNode {
   id: number;
@@ -101,8 +102,9 @@ export class WorldMap {
     geo.computeVertexNormals();
 
     const mat = new THREE.MeshStandardMaterial({
+      map: createArenaGridTexture(),
       vertexColors: true,
-      roughness: 0.9,
+      roughness: 0.88,
       metalness: 0.05,
       flatShading: true,
     });
